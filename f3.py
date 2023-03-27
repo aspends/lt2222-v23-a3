@@ -4,10 +4,14 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 import torch.nn as nn
 import torch.optim as optim
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, precision_recall_curve, auc
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy
+import os
+
+
+
 
 
 
@@ -46,8 +50,11 @@ if __name__ == "__main__":
     y_train_tensor = torch.tensor(pd.Categorical(y_train).codes).long()
     X_test_tensor = torch.tensor(X_test.values).float()
     y_test_tensor = torch.tensor(pd.Categorical(y_test).codes).long()
-    print(X_train_tensor)
-    print(y_train_tensor)
+    #print(X_train_tensor)
+    #print(y_train_tensor)
+    
+    hidden_sizes = [16,32,64,128,256,512,1024]
+
     # Define the model
     class Model(nn.Module):
         def __init__(self, input_dim, hidden_size, output_dim, nonlinearity):
@@ -66,37 +73,70 @@ if __name__ == "__main__":
             x = self.activation(x)
             x = self.fc2(x)
             return nn.functional.log_softmax(x, dim=1)
+    
+    hidden_sizes = [16,32,64,128,256,512,1024]
+    
+    precision_values=[]
+    recall_values=[]
+    
+    for hidden_size in hidden_sizes:
+        model = Model(X_train.shape[1], args.hidden_size, len(authors_df), args.nonlinearity) 
+        
+        # Train the model
+        criterion = nn.NLLLoss()
+        optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
 
-    model = Model(X_train.shape[1], args.hidden_size, len(authors_df), args.nonlinearity) 
-    print(authors_df)
-    # Train the model
-    criterion = nn.NLLLoss()
-    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
-
-    for epoch in range(args.epochs):
-        running_loss = 0.0
-        optimizer.zero_grad()
-        output = model(X_train_tensor)
-        loss = criterion(output, y_train_tensor)
-        loss.backward()
-        optimizer.step()
-        running_loss += loss.item()
-    print("Epoch {}: Loss = {:.4f}".format(epoch+1, running_loss/len(X_train)))
-
-
-    # Test the model
-    print("Testing the model")
-    model.eval()
-    with torch.no_grad():
-        output = model(X_test_tensor)
-        _, predicted = torch.max(output, 1)
-        cm = confusion_matrix(y_test.astype(str), predicted.numpy().astype(str))
-        print("Confision matrix", cm)
-        print("Accuracy: {:.2f}%".format(100*numpy.trace(cm)/numpy.sum(cm)))
+        for epoch in range(args.epochs):
+            running_loss = 0.0
+            optimizer.zero_grad()
+            output = model(X_train_tensor)
+            loss = criterion(output, y_train_tensor)
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+        print("Epoch {}: Loss = {:.4f}".format(epoch+1, running_loss/len(X_train)))
 
 
-    sns.heatmap(cm, annot=True, cmap='Reds')
-    plt.xlabel('Predicted')
-    plt.ylabel('True')
-    plt.show()
+         #Test the model
+        print("Testing the model")
+        model.eval()
+        with torch.no_grad():
+            output = model(X_test_tensor)
+            _, predicted = torch.max(output, 1)
+            cm = confusion_matrix(y_test.astype(str), predicted.numpy().astype(str))
+            print("Confision matrix", cm)
+
+            print("Accuracy: {:.2f}%".format(100*numpy.trace(cm)/numpy.sum(cm)))
+
+               
+        precisions = []
+        recalls = []
+        for author in authors_df:
+            author_idx = str(author)  # cast author to integer
+            tp = cm[0][0]
+            fp = cm[1][0]
+            fn = cm[0][1]
+            tn = cm[1][1]
+            precision = tp / (tp + fp)
+            recall = tp / (tp + fn)
+            precisions.append(precision)
+            recalls.append(recall)
+
+        
+            
+        precision=numpy.mean(precisions)
+        recall=numpy.mean(recalls)
+        precision_values.append(precision)
+        recall_values.append(recall)
+
+    plt.plot(hidden_sizes,precision_values, label='Precision')
+    plt.plot(hidden_sizes,recall_values,label='Recall')
+    plt.xlabel('Hidden Layer Size')
+    plt.ylabel('Precision/Recall')
+    plt.title('Precision-Recall Curve for Differen Hidden Layer Sizes')
+    plt.legend()
+    
+    
+    
+    plt.savefig('results.png')
 
